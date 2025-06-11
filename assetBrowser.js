@@ -29,6 +29,7 @@ class AssetBrowser {
         this.rotationSpeed = 0.01; // Speed of rotation
         this.camera = scene.activeCamera; // Store reference to the camera
         this.cameraControlsEnabled = true; // Track if camera controls are enabled
+        this.originalCameraInputs = null; // Store original camera input states
         
         // Create GUI
         this.createGUI();
@@ -450,6 +451,9 @@ this.selectedFile = filePath;
 this.originalCursor = document.body.style.cursor || 'default';
 document.body.style.cursor = "crosshair";
 
+// Disable camera controls when a file is selected
+this.disableCameraControls();
+
 // Clear any existing selection
 this.clearObjectSelection();
 
@@ -519,8 +523,10 @@ this.clearObjectSelection();
             }
             this.selectedObject = null;
 
-            // Re-enable camera controls when no object is selected
-            this.enableCameraControls();
+            // Only re-enable camera controls if we're not in the middle of placing a file
+            if (!this.selectedFile) {
+                this.enableCameraControls();
+            }
         }
         document.body.style.cursor = this.originalCursor;
     }
@@ -832,11 +838,7 @@ console.log('============================');
             console.error('Error placing object:', error);
             // Re-enable camera controls if there was an error
             this.enableCameraControls();
-        }
-        } else {
-            // Clicked on empty space, clear selection
-            this.clearObjectSelection();
-        }
+        } 
     }
     
     /**
@@ -880,17 +882,22 @@ console.log('============================');
      * @param {BABYLON.Vector3} position - Position to place the object
      * @param {BABYLON.PickingInfo} pickInfo - Information about the picked point
      */
+    /**
+     * Place the selected object at the specified position
+     * @param {BABYLON.Vector3} position - Position to place the object
+     * @param {BABYLON.PickingInfo} pickInfo - Information about the picked point
+     */
     async placeObject(position, pickInfo = null) {
         if (!this.selectedFile) return;
         
         // Default to centering if no pick info is provided
-        const useSidePlacement = true;
+        let useSidePlacement = true;
         let sideOffset = new BABYLON.Vector3(0, 0, 0);
         let normal = new BABYLON.Vector3(0, 1, 0); // Default to up vector
         let debugSphere = null; // Will hold reference to the debug sphere if created
         let calculateSideOffset = false; // Flag to calculate side offset after model load
         
-        if (useSidePlacement && pickInfo) {
+        if (pickInfo) {
             try {
                 // Get the normal of the clicked face
                 normal = pickInfo.getNormal(true);
@@ -1130,6 +1137,59 @@ console.log('============================');
         }
     }
     
+    /**
+     * Disable camera controls when placing objects
+     */
+    disableCameraControls() {
+        if (!this.camera || !this.camera.inputs) return;
+        
+        // Store original input states
+        this.originalCameraInputs = {
+            keyboard: this.camera.inputs.attached.keyboard ? true : false,
+            mouseWheel: this.camera.inputs.attached.mousewheel ? true : false,
+            pointers: this.camera.inputs.attached.pointers ? true : false
+        };
+        
+        // Detach camera controls
+        this.camera.detachControl(this.scene.getEngine().getRenderingCanvas());
+        
+        // Disable specific inputs if they exist
+        if (this.camera.inputs.attached.keyboard) {
+            this.camera.inputs.attached.keyboard.detachControl();
+        }
+        if (this.camera.inputs.attached.mousewheel) {
+            this.camera.inputs.attached.mousewheel.detachControl();
+        }
+        if (this.camera.inputs.attached.pointers) {
+            this.camera.inputs.attached.pointers.detachControl();
+        }
+        
+        this.cameraControlsEnabled = false;
+    }
+    
+    /**
+     * Re-enable camera controls
+     */
+    enableCameraControls() {
+        if (!this.camera || !this.camera.inputs || !this.originalCameraInputs) return;
+        
+        // Re-attach camera controls
+        this.camera.attachControl(this.scene.getEngine().getRenderingCanvas(), true);
+        
+        // Re-enable inputs that were previously enabled
+        if (this.originalCameraInputs.keyboard && this.camera.inputs.attached.keyboard) {
+            this.camera.inputs.attached.keyboard.attachControl();
+        }
+        if (this.originalCameraInputs.mouseWheel && this.camera.inputs.attached.mousewheel) {
+            this.camera.inputs.attached.mousewheel.attachControl();
+        }
+        if (this.originalCameraInputs.pointers && this.camera.inputs.attached.pointers) {
+            this.camera.inputs.attached.pointers.attachControl(this.scene.getEngine().getRenderingCanvas());
+        }
+        
+        this.cameraControlsEnabled = true;
+    }
+    
     dispose() {
         if (this.sceneClickObserver) {
             this.scene.onPointerObservable.remove(this.sceneClickObserver);
@@ -1144,6 +1204,9 @@ console.log('============================');
         
         // Clear original materials map
         this.originalMaterials.clear();
+        
+        // Re-enable camera controls before disposing
+        this.enableCameraControls();
     }
     
     /**
