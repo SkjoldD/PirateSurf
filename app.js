@@ -1,6 +1,7 @@
 // Import modules
 import { createWaterPlane } from './waterMaterial.js';
 import { AssetBrowser } from './assetBrowser.js';
+import { InputHandler } from './inputHandler.js';
 
 // Get the canvas element
 const canvas = document.getElementById("renderCanvas");
@@ -14,14 +15,11 @@ const createScene = function() {
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = new BABYLON.Color4(0.1, 0.1, 0.2, 1); // Dark blue background
     
-    // Create a camera
-    const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 8, 8, BABYLON.Vector3.Zero(), scene);
-    camera.attachControl(canvas, true);
-    camera.upperBetaLimit = Math.PI / 2.2; // Limit camera angle
-    camera.lowerRadiusLimit = 0.1; // Can get very close (1 unit from target)
-    camera.upperRadiusLimit = 500; // Maximum zoom distance
-    camera.wheelPrecision = 2; // Smoother zoom control
-    camera.pinchPrecision = 50; // Better touch control if on touch devices
+    // Create a camera with default position and target
+    const camera = new BABYLON.ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 8, 50, BABYLON.Vector3.Zero(), scene);
+    
+    // Store the camera in the window for debugging
+    window.camera = camera;
     
     // Add lighting
     const light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 1, 0), scene);
@@ -55,11 +53,19 @@ const createScene = function() {
     // Create asset browser
     const assetBrowser = new AssetBrowser(scene);
     
-    // Toggle asset browser with 'B' key
-    scene.onKeyboardObservable.add((kbInfo) => {
-        if (kbInfo.type === BABYLON.KeyboardEventTypes.KEYDOWN && kbInfo.event.key === 'b') {
-            assetBrowser.setVisible(!assetBrowser.container.isVisible);
-        }
+    // Initialize input handler for all input controls
+    const inputHandler = new InputHandler(scene, camera, assetBrowser);
+    window.inputHandler = inputHandler; // For debugging
+    
+    // Handle window resize
+    window.addEventListener('resize', () => {
+        engine.resize();
+    });
+    
+    // Clean up on scene dispose
+    scene.onDisposeObservable.add(() => {
+        inputHandler.dispose();
+        assetBrowser.dispose();
     });
     
     return scene;
@@ -69,11 +75,11 @@ const createScene = function() {
 const scene = createScene();
 
 // Run the render loop
-engine.runRenderLoop(function() {
+engine.runRenderLoop(() => {
     scene.render();
 });
 
 // Handle browser/canvas resize events
-window.addEventListener('resize', function() {
+window.addEventListener('resize', () => {
     engine.resize();
 });
