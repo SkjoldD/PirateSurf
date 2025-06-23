@@ -1,25 +1,170 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Asset Level Editor</title>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css">
-    <script src="logger.js"></script>
+    <title>3D Asset Level Editor</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 250px;
+        }
+        #asset-browser {
+            margin-top: 10px;
+        }
+        .folder {
+            cursor: pointer;
+            margin: 5px 0;
+            user-select: none;
+        }
+        .folder-name {
+            display: flex;
+            align-items: center;
+        }
+        .folder-contents {
+            margin-left: 20px;
+            display: none;
+        }
+        .folder.expanded .folder-contents {
+            display: block;
+        }
+        .file {
+            cursor: pointer;
+            padding: 2px 5px;
+            margin: 2px 0;
+            border-radius: 3px;
+        }
+        .file:hover, .file.selected {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        #info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        #hud {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(40, 40, 40, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 250px;
+            z-index: 100;
+        }
+        
+        #hud div {
+            margin: 5px 0;
+        }
+        
+        #selected-object-info {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        #selection-feedback {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            display: none;
+            transition: opacity 0.3s ease;
+            z-index: 1000;
+        }
+    </style>
 </head>
 <body>
-    <canvas id="renderCanvas" touch-action="none"></canvas>
+    <div id="ui">
+        <h3>3D Asset Browser</h3>
+        <div id="asset-browser">
+            <!-- Folders and files will be populated by JavaScript -->
+        </div>
+        <div>
+            <button id="save-btn">Save Scene</button>
+            <input type="file" id="load-file" accept=".json" style="display: none;">
+            <button id="load-btn">Load Scene</button>
+        </div>
+    </div>
+    <div id="info">Left Click: Select/Look | Right Click: Pan | Scroll: Zoom | R: Rotate Selected</div>
     
-    <!-- Import Babylon.js -->
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
-    <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
-    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
-    <script src="https://cdn.babylonjs.com/proceduralTexturesLibrary/babylonjs.proceduralTextures.min.js"></script>
+    <!-- HUD -->
+    <div id="hud">
+        <div>Left Click: Place/Select Object</div>
+        <div>Right Click: Deselect</div>
+        <div>R Key: Rotate Selected</div>
+        <div>Delete/Backspace: Remove Selected</div>
+        <div id="selected-object-info"></div>
+    </div>
     
-    <!-- Import our modules -->
-    <script src="waterMaterial.js" type="module"></script>
-    <script src="assetBrowser.js" type="module"></script>
-    <script src="app.js" type="module"></script>
+    <!-- Selection Feedback -->
+    <div id="selection-feedback"></div>
+    
+    <!-- Three.js and other scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/TransformControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="js/main.js"></script>
+    
+    <style>
+        /* Style for transform controls */
+        .transform-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(40, 40, 40, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        
+        .transform-controls button {
+            margin: 2px;
+            padding: 5px 10px;
+            cursor: pointer;
+            background: #444;
+            color: white;
+            border: 1px solid #666;
+            border-radius: 3px;
+        }
+        
+        .transform-controls button.active {
+            background: #0078ff;
+            border-color: #0055cc;
+        }
+    </style>
 </body>
 </html>
