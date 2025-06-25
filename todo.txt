@@ -1,0 +1,19 @@
+FEATURES:
+1. Shooting
+    a. Auto shooting.
+    b. Straigth shooting.
+    c. Hotkey shooting.
+    d. Sideways?
+
+2. Jumping
+3. Swinging
+4. Enemies
+5. Obstacles to be shot
+6. Obstacles to pass under that in the end activates something
+7. Time blocks
+    a. to juump on
+    b. to surf over
+8. Collect coins
+9. Moving elements
+10. Ramps
+11. Speed boost

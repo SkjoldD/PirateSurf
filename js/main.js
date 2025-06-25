@@ -4,6 +4,60 @@ class AssetLevelEditor {
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x333333);
         
+        // Track if mouse is over UI
+        this.isOverUI = false;
+        
+        // Initialize properties UI references
+        this.propertiesPanel = null; // Reference to the properties panel element
+        this.propertiesList = null; // Reference to the properties list element
+        this.addPropertyBtn = null; // Reference to the add property button
+        
+        console.log('Properties panel elements:', {
+            panel: this.propertiesPanel,
+            list: this.propertiesList,
+            button: this.addPropertyBtn
+        });
+        
+        // Set up properties panel event listeners
+        if (this.addPropertyBtn) {
+            // Store reference to this for use in the event listener
+            const self = this;
+            
+            // Use mousedown instead of click to prevent blur events from deselecting
+            this.addPropertyBtn.addEventListener('mousedown', function(event) {
+                // Prevent default to avoid any potential form submission
+                event.preventDefault();
+                
+                // Don't stop propagation here as we want the panel to stay focused
+                
+                // Only add property if we have a selected object
+                if (self.selectedObject) {
+                    // Use setTimeout to ensure this runs after any other click handlers
+                    setTimeout(() => {
+                        self.addProperty();
+                    }, 0);
+                }
+            });
+            
+            // Also prevent click events from propagating
+            this.addPropertyBtn.addEventListener('click', function(event) {
+                event.stopPropagation();
+                event.preventDefault();
+            });
+            
+            // Prevent focus from being removed from the panel
+            this.addPropertyBtn.addEventListener('focus', function(event) {
+                event.stopPropagation();
+            });
+            
+            console.log('Added event listeners to add property button');
+        } else {
+            console.error('Add property button not found!');
+        }
+        
+        // Store properties for each object
+        this.objectProperties = new Map();
+        
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(10, 10, 10);
         this.camera.lookAt(0, 0, 0);
@@ -86,16 +140,18 @@ class AssetLevelEditor {
     
     setupEventListeners() {
         // Prevent default context menu on the whole window
-        window.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            return false;
-        });
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
         
         // Use mousedown instead of click for better control
-        window.addEventListener('mousedown', (e) => this.onMouseClick(e), false);
-        window.addEventListener('resize', () => this.onWindowResize(), false);
-        window.addEventListener('keydown', (e) => this.onKeyDown(e), false);
-        window.addEventListener('keyup', (e) => this.onKeyUp(e), false);
+        document.addEventListener('mousedown', (e) => this.onMouseClick(e));
+        window.addEventListener('resize', () => this.onWindowResize());
+        document.addEventListener('keydown', (e) => this.onKeyDown(e));
+        document.addEventListener('keyup', (e) => this.onKeyUp(e));
+        
+        // UI hover detection
+        const uiElement = document.getElementById('ui');
+        uiElement.addEventListener('mouseenter', () => this.isOverUI = true);
+        uiElement.addEventListener('mouseleave', () => this.isOverUI = false);
         
         // UI event listeners
         document.getElementById('save-btn')?.addEventListener('click', () => this.saveScene());
@@ -111,6 +167,16 @@ class AssetLevelEditor {
     
     onMouseClick(event) {
         event.preventDefault();
+        
+        // Check if the click was inside the properties panel
+        const propertiesPanel = document.getElementById('properties-panel');
+        const isClickInPropertiesPanel = propertiesPanel && 
+            (event.target === propertiesPanel || propertiesPanel.contains(event.target));
+        
+        // Skip if mouse is over UI or properties panel
+        if (this.isOverUI || isClickInPropertiesPanel) {
+            return;
+        }
         
         // Skip mouse events if we're currently transforming
         if (this.transformControls?.dragging) {
@@ -322,8 +388,13 @@ class AssetLevelEditor {
     }
     
     selectObject(object) {
+        if (!object) {
+            console.warn('Cannot select: No object provided');
+            return;
+        }
+        
         // Don't select the ground plane or other helper objects
-        if (!object || object.name === 'ground' || object.name === 'grid' || object.name === 'axes') {
+        if (object.name === 'ground' || object.name === 'grid' || object.name === 'axes') {
             this.deselectObject();
             return;
         }
@@ -336,23 +407,42 @@ class AssetLevelEditor {
             
             // Don't do anything if we're selecting the same object
             if (this.selectedObject === object) {
+                console.log('Object already selected:', object);
                 return;
             }
             
+            console.log('Selecting object:', object);
+            
+            // Deselect the current object first
             this.deselectObject();
             
+            // Store the new selection
             this.selectedObject = object;
+            
+            // Ensure the object has a UUID
+            if (!object.uuid) {
+                console.warn('Selected object has no UUID, generating one');
+                object.uuid = THREE.MathUtils.generateUUID();
+            }
+            
+            // Ensure the object has userData
+            object.userData = object.userData || {};
             
             // Attach transform controls to the selected object
             if (this.transformControls) {
                 this.transformControls.attach(object);
                 this.transformControls.enabled = true;
-                this.transformControlsUI.style.display = 'block';
+                if (this.transformControlsUI) {
+                    this.transformControlsUI.style.display = 'block';
+                }
             }
             
             // Highlight the selected object
             object.traverse(child => {
                 if (child.isMesh) {
+                    // Skip if already processed
+                    if (child.userData.isHighlighted) return;
+                    
                     // Store original emissive color if not already stored
                     if (!child.userData.originalEmissive) {
                         child.userData.originalEmissive = child.material.emissive ? 
@@ -368,11 +458,45 @@ class AssetLevelEditor {
                     if (!child.userData.originalMaterial) {
                         child.userData.originalMaterial = child.material;
                     }
+                    
+                    // Mark as highlighted
+                    child.userData.isHighlighted = true;
                 }
             });
             
+            // Ensure properties panel is initialized
+            if (!this.propertiesPanel) {
+                this.propertiesPanel = document.getElementById('properties-panel');
+                this.propertiesList = document.getElementById('properties-list');
+                this.addPropertyBtn = document.getElementById('add-property-btn');
+                
+                if (this.addPropertyBtn) {
+                    const self = this;
+                    this.addPropertyBtn.onclick = function(e) {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        self.addProperty();
+                    };
+                }
+            }
+            
+            // Show the properties panel
+            if (this.propertiesPanel) {
+                console.log('Showing properties panel');
+                this.propertiesPanel.style.display = 'block';
+                this.propertiesPanel.style.visibility = 'visible';
+                
+                // Load properties for the selected object
+                this.loadObjectProperties();
+            } else {
+                console.error('Properties panel element not found!');
+            }
+            
             // Update HUD with selected object info
             this.updateHUD();
+            
+            console.log('Successfully selected object:', object);
+            
         } catch (error) {
             console.error('Error selecting object:', error);
         }
@@ -381,43 +505,60 @@ class AssetLevelEditor {
     deselectObject() {
         if (this.selectedObject) {
             try {
-                // Remove highlight and restore original material
+                console.log('Deselecting object:', this.selectedObject);
+                
+                // Remove highlight from the previously selected object
                 this.selectedObject.traverse(child => {
                     if (child.isMesh) {
-                        // Restore original emissive color if it was stored
-                        if (child.userData.originalEmissive) {
-                            if (child.material.emissive) {
-                                child.material.emissive.copy(child.userData.originalEmissive);
-                            }
+                        // Restore original emissive color if it was changed
+                        if (child.userData.originalEmissive && child.material.emissive) {
+                            child.material.emissive.copy(child.userData.originalEmissive);
                         }
                         
-                        // Restore original material if it was stored
-                        if (child.userData.originalMaterial) {
-                            child.material = child.userData.originalMaterial;
-                        }
+                        // Clear the highlighted flag
+                        delete child.userData.isHighlighted;
                     }
                 });
-            } catch (error) {
-                console.error('Error during object deselection:', error);
-            }
-            
-            // Disable and detach transform controls
-            if (this.transformControls) {
+                
+                // Save any pending property changes before deselecting
                 try {
+                    this.updateProperty();
+                } catch (propError) {
+                    console.warn('Error saving properties before deselect:', propError);
+                }
+                
+                // Clear the selection
+                const deselectedObject = this.selectedObject;
+                this.selectedObject = null;
+                
+                // Remove transform controls
+                if (this.transformControls) {
                     this.transformControls.detach();
                     this.transformControls.enabled = false;
                     if (this.transformControlsUI) {
                         this.transformControlsUI.style.display = 'none';
                     }
-                } catch (error) {
-                    console.error('Error detaching transform controls:', error);
+                }
+                
+                console.log('Successfully deselected object:', deselectedObject);
+                
+            } catch (error) {
+                console.error('Error deselecting object:', error);
+            } finally {
+                // Always update HUD and clean up UI
+                this.updateHUD();
+                
+                // Hide the properties panel but don't destroy its contents
+                if (this.propertiesPanel) {
+                    this.propertiesPanel.style.display = 'none';
+                    this.propertiesPanel.style.visibility = 'hidden';
+                }
+                
+                // Clear the properties list but keep the reference to the element
+                if (this.propertiesList) {
+                    this.propertiesList.innerHTML = '';
                 }
             }
-            
-            this.selectedObject = null;
-            
-            // Update HUD
-            this.updateHUD();
         } else if (this.transformControls) {
             // If no object is selected but controls exist, make sure they're disabled
             try {
@@ -685,6 +826,23 @@ class AssetLevelEditor {
                 "wall-to-narrow.glb",
                 "wall.glb"
             ],
+            // Special folder with subfolders
+            "Special": {
+                "Special-Castle": [
+                    "special-siege-ballista.glb",
+                    "special-siege-catapult.glb",
+                    "special-siege-trebuchet.glb"
+                ],
+                "Special-Survival": [
+                    "special-fish.glb",
+                    "special-fish-large.glb",
+                ],
+                "Special-Platformer": [
+                    "special-coin-bronze.glb",
+                    "special-coin-gold.glb",
+                    "special-coin-silver.glb"
+                ]
+            },
             "Pirate": [
                 "barrel.glb",
                 "boat-row-large.glb",
@@ -1052,78 +1210,324 @@ class AssetLevelEditor {
         }
     }
     
-    saveScene() {
-        const sceneData = {
-            version: "2.0",
-            metadata: {
-                savedAt: new Date().toISOString(),
-                objectCount: 0, // Will be updated after counting
-                engine: "Three.js",
-                editor: "AssetLevelEditor"
-            },
-            objects: []
-        };
-        
-        // Counter for object IDs
-        let objectId = 1;
-        
-        // Find all placed objects in the scene
-        this.scene.traverse(object => {
-            if (object.userData.isPlacedObject) {
-                const filename = object.userData.originalFile?.split('/').pop() || 'unknown';
-                
-                sceneData.objects.push({
-                    name: filename,
-                    position: {
-                        x: object.position.x,
-                        y: object.position.y,
-                        z: object.position.z
-                    },
-                    rotationQuaternion: {
-                        x: object.quaternion.x,
-                        y: object.quaternion.y,
-                        z: object.quaternion.z,
-                        w: object.quaternion.w
-                    },
-                    scale: {
-                        x: object.scale.x,
-                        y: object.scale.y,
-                        z: object.scale.z
-                    },
-                    path: object.userData.originalFile || '',
-                    filename: filename,
-                    id: objectId++
-                });
+    loadObjectProperties() {
+        try {
+            console.log('Loading object properties...');
+            
+            // Ensure we have a selected object
+            if (!this.selectedObject) {
+                console.warn('Cannot load properties: No object selected');
+                return;
             }
-        });
+            
+            // Re-acquire properties list reference if needed
+            if (!this.propertiesList) {
+                this.propertiesList = document.getElementById('properties-list');
+                if (!this.propertiesList) {
+                    console.error('Properties list element not found!');
+                    return;
+                }
+            }
+            
+            // Clear existing properties but keep the "Add Property" button visible
+            while (this.propertiesList.firstChild) {
+                this.propertiesList.removeChild(this.propertiesList.firstChild);
+            }
+            
+            // Ensure the object has userData
+            this.selectedObject.userData = this.selectedObject.userData || {};
+            
+            // Get properties from the object's userData
+            const properties = this.selectedObject.userData.properties || {};
+            
+            console.log('Loaded properties for object', this.selectedObject.uuid, properties);
+            
+            // Add properties to the list
+            Object.entries(properties).forEach(([key, value]) => {
+                if (key && key.trim() !== '' && value !== undefined) {
+                    try {
+                        this.addProperty(key, String(value), false);
+                    } catch (error) {
+                        console.error(`Error adding property ${key}:`, error);
+                    }
+                }
+            });
+            
+            // Ensure the properties panel is visible
+            if (this.propertiesPanel) {
+                this.propertiesPanel.style.display = 'block';
+                this.propertiesPanel.style.visibility = 'visible';
+            }
+            
+        } catch (error) {
+            console.error('Error in loadObjectProperties:', error);
+        }
+    }
+    
+    addProperty(key = '', value = '', isNew = true) {
+        console.log('Adding property:', { key, value, isNew });
         
-        // Update the object count
-        sceneData.metadata.objectCount = sceneData.objects.length;
+        // Store the currently selected object to ensure we don't lose it
+        const currentSelected = this.selectedObject;
         
-        // Create a download link
-        const dataStr = JSON.stringify(sceneData, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+        if (!currentSelected) {
+            console.warn('Cannot add property: No object selected');
+            return;
+        }
         
-        const exportName = `scene_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+        // Make sure propertiesList exists
+        if (!this.propertiesList) {
+            console.error('Properties list element not found!');
+            return;
+        }
         
-        const linkElement = document.createElement('a');
-        linkElement.setAttribute('href', dataUri);
-        linkElement.setAttribute('download', exportName);
-        document.body.appendChild(linkElement);
-        linkElement.click();
-        document.body.removeChild(linkElement);
+        try {
+            // Create the property item container
+            const propertyItem = document.createElement('div');
+            propertyItem.className = 'property-item';
+            
+            // Store reference to this for use in event listeners
+            const self = this;
+            
+            // Create key input
+            const keyInput = document.createElement('input');
+            keyInput.type = 'text';
+            keyInput.placeholder = 'Key';
+            keyInput.value = key;
+            keyInput.addEventListener('mousedown', (e) => e.stopPropagation());
+            keyInput.addEventListener('click', (e) => e.stopPropagation());
+            keyInput.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                    valueInput.focus();
+                }
+            });
+            keyInput.addEventListener('change', () => self.updateProperty());
+            
+            // Create value input
+            const valueInput = document.createElement('input');
+            valueInput.type = 'text';
+            valueInput.placeholder = 'Value';
+            valueInput.value = value;
+            valueInput.addEventListener('mousedown', (e) => e.stopPropagation());
+            valueInput.addEventListener('click', (e) => e.stopPropagation());
+            valueInput.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter' && keyInput.value.trim() !== '') {
+                    // Add a new property when Enter is pressed
+                    setTimeout(() => self.addProperty(), 0);
+                }
+            });
+            valueInput.addEventListener('change', () => self.updateProperty());
+            
+            // Create delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.title = 'Remove property';
+            deleteBtn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Use setTimeout to ensure this runs after any other click handlers
+                setTimeout(() => {
+                    if (self.propertiesList && propertyItem.parentNode === self.propertiesList) {
+                        self.propertiesList.removeChild(propertyItem);
+                        self.updateProperty();
+                    }
+                }, 0);
+            });
+            
+            // Also prevent click events on the delete button
+            deleteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            // Assemble the property item
+            propertyItem.appendChild(keyInput);
+            propertyItem.appendChild(valueInput);
+            propertyItem.appendChild(deleteBtn);
+            
+            // Add to the properties list
+            if (this.propertiesList) {
+                this.propertiesList.appendChild(propertyItem);
+                
+                // Ensure the panel is visible
+                if (this.propertiesPanel) {
+                    this.propertiesPanel.style.display = 'block';
+                    this.propertiesPanel.style.visibility = 'visible';
+                }
+                
+                // Focus the key input if it's a new property
+                if (isNew) {
+                    // Use setTimeout to ensure the element is in the DOM before focusing
+                    setTimeout(() => {
+                        keyInput.focus();
+                    }, 0);
+                }
+                
+                // Update properties
+                this.updateProperty();
+            }
+            
+            // Restore the selected object in case it was lost
+            if (!this.selectedObject && currentSelected) {
+                this.selectedObject = currentSelected;
+            }
+            
+        } catch (error) {
+            console.error('Error adding property:', error);
+            
+            // Restore the selected object in case of error
+            if (!this.selectedObject && currentSelected) {
+                this.selectedObject = currentSelected;
+            }
+        }
+    }
+    
+    updateProperty() {
+        try {
+            // Ensure we have a valid selection and properties list
+            if (!this.selectedObject) {
+                console.warn('Cannot update properties: No object selected');
+                return;
+            }
+            
+            // Re-acquire properties list reference if needed
+            if (!this.propertiesList) {
+                this.propertiesList = document.getElementById('properties-list');
+                if (!this.propertiesList) {
+                    console.error('Properties list element not found!');
+                    return;
+                }
+            }
+            
+            // Ensure the object has userData
+            this.selectedObject.userData = this.selectedObject.userData || {};
+            
+            // Collect all properties from the UI
+            const properties = {};
+            let hasValidProperties = false;
+            
+            const propertyItems = this.propertiesList.querySelectorAll('.property-item');
+            propertyItems.forEach((item) => {
+                const keyInput = item.querySelector('input[type="text"]:first-child');
+                const valueInput = item.querySelector('input[type="text"]:nth-child(2)');
+                
+                if (keyInput && valueInput) {
+                    const key = keyInput.value.trim();
+                    const value = valueInput.value.trim();
+                    
+                    // Only add non-empty keys
+                    if (key !== '') {
+                        properties[key] = value;
+                        hasValidProperties = true;
+                    }
+                }
+            });
+            
+            // Update or remove the properties for this object
+            if (hasValidProperties) {
+                // Store properties directly on the object's userData
+                this.selectedObject.userData.properties = { ...properties };
+                console.log('Updated properties for object', this.selectedObject.uuid, properties);
+            } else {
+                // Remove properties if none are valid
+                delete this.selectedObject.userData.properties;
+                console.log('Removed properties for object', this.selectedObject.uuid);
+            }
+            
+        } catch (error) {
+            console.error('Error updating properties:', error);
+        }
+    }
+    
+    saveScene() {
+        try {
+            const sceneData = {
+                version: '2.2',
+                metadata: {
+                    format: 'AssetEditorScene',
+                    generatedBy: 'AssetLevelEditor',
+                    date: new Date().toISOString(),
+                    objectCount: 0, // Will be updated after counting
+                    engine: "Three.js",
+                    editor: "AssetLevelEditor"
+                },
+                objects: []
+            };
+            
+            // Find all placed objects in the scene
+            this.scene.traverse(object => {
+                if (object.userData.isPlacedObject) {
+                    const filename = object.userData.originalFile?.split('/').pop() || 'unknown';
+                    const objectData = {
+                        name: filename,
+                        position: {
+                            x: object.position.x,
+                            y: object.position.y,
+                            z: object.position.z
+                        },
+                        rotation: {
+                            x: object.rotation.x,
+                            y: object.rotation.y,
+                            z: object.rotation.z
+                        },
+                        scale: {
+                            x: object.scale.x,
+                            y: object.scale.y,
+                            z: object.scale.z
+                        },
+                        path: object.userData.originalFile || '',
+                        filename: filename,
+                        uuid: object.uuid,
+                        originalUuid: object.userData.originalUuid || object.uuid,
+                        // Store properties directly in the object data
+                        properties: object.userData.properties ? { ...object.userData.properties } : {}
+                    };
+                    
+                    sceneData.objects.push(objectData);
+                }
+            });
+            
+            // Update the object count
+            sceneData.metadata.objectCount = sceneData.objects.length;
+            
+            // Create a download link
+            const dataStr = JSON.stringify(sceneData, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            
+            const exportName = `scene_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportName);
+            document.body.appendChild(linkElement);
+            linkElement.click();
+            document.body.removeChild(linkElement);
+            
+            console.log(`Scene saved with ${sceneData.objects.length} objects`);
+            
+        } catch (error) {
+            console.error('Error saving scene:', error);
+            alert('Error saving scene. See console for details.');
+        }
     }
     
     async loadScene(event) {
         const file = event.target.files[0];
         if (!file) return;
         
+        // Show loading message
+        const hud = document.getElementById('hud');
+        const originalHUD = hud ? hud.innerHTML : '';
+        
         try {
             const fileContent = await file.text();
             const sceneData = JSON.parse(fileContent);
             
-            // Check if this is the new format (v2.0)
-            const isNewFormat = sceneData.version === '2.0' && Array.isArray(sceneData.objects);
+            // Check the scene format version
+            const isNewFormat = sceneData.version && sceneData.version.startsWith('2.');
             
             // Clear existing objects (except lights, grid, etc.)
             const objectsToRemove = [];
@@ -1136,8 +1540,6 @@ class AssetLevelEditor {
             objectsToRemove.forEach(obj => this.scene.remove(obj));
             
             // Show loading message
-            const hud = document.getElementById('hud');
-            const originalHUD = hud.innerHTML;
             if (hud) {
                 hud.innerHTML = `<div>Loading scene: ${file.name} (${isNewFormat ? sceneData.metadata?.objectCount || 0 : 'legacy'} objects)</div>`;
             }
@@ -1167,13 +1569,12 @@ class AssetLevelEditor {
                         model.position.fromArray(objData.position);
                     }
                     
-                    // Set rotation (quaternion takes precedence over euler)
-                    if (isNewFormat && objData.rotationQuaternion) {
-                        model.quaternion.set(
-                            objData.rotationQuaternion.x || 0,
-                            objData.rotationQuaternion.y || 0,
-                            objData.rotationQuaternion.z || 0,
-                            objData.rotationQuaternion.w !== undefined ? objData.rotationQuaternion.w : 1
+                    // Set rotation
+                    if (isNewFormat && objData.rotation) {
+                        model.rotation.set(
+                            objData.rotation.x || 0,
+                            objData.rotation.y || 0,
+                            objData.rotation.z || 0
                         );
                     } else if (Array.isArray(objData.rotation)) {
                         model.rotation.fromArray(objData.rotation);
@@ -1191,18 +1592,27 @@ class AssetLevelEditor {
                             );
                         }
                     } else {
-                        // Default scale if not specified
                         model.scale.set(1, 1, 1);
                     }
                     
+                    // Initialize userData
+                    model.userData = model.userData || {};
                     model.userData.isPlacedObject = true;
                     model.userData.originalFile = modelPath;
                     
-                    // Store the original ID if it exists
-                    if (isNewFormat && objData.id) {
-                        model.userData.originalId = objData.id;
+                    // Store the original ID and UUID if they exist
+                    if (isNewFormat) {
+                        if (objData.id) model.userData.originalId = objData.id;
+                        if (objData.uuid) model.userData.originalUuid = objData.uuid;
+                        if (objData.originalUuid) model.userData.originalUuid = objData.originalUuid;
+                        
+                        // Load properties if they exist in the object data
+                        if (objData.properties) {
+                            model.userData.properties = { ...objData.properties };
+                        }
                     }
                     
+                    // Set up shadows
                     model.traverse(child => {
                         if (child.isMesh) {
                             child.castShadow = true;

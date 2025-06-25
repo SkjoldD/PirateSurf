@@ -132,14 +132,149 @@
     <!-- Selection Feedback -->
     <div id="selection-feedback"></div>
     
+    <!-- Properties Panel -->
+    <div id="properties-panel">
+        <h3>Object Properties</h3>
+        <div id="properties-list">
+            <!-- Properties will be added here dynamically -->
+        </div>
+        <button id="add-property-btn">+ Add Property</button>
+    </div>
+    
     <!-- Three.js and other scripts -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/TransformControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    
     <script src="js/main.js"></script>
     
     <style>
+        /* Properties Panel */
+        #properties-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(40, 40, 40, 0.95);
+            color: white;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 15px;
+            width: 300px;
+            max-height: 60vh;
+            overflow-y: auto;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.7);
+            font-family: Arial, sans-serif;
+            pointer-events: auto; /* Ensure the panel can receive mouse events */
+        }
+        
+        #properties-list {
+            margin-bottom: 10px;
+            max-height: calc(60vh - 100px);
+            overflow-y: auto;
+        }
+        
+        .property-item {
+            display: flex;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        
+        .property-item input[type="text"] {
+            flex: 1;
+            margin: 0 5px;
+            padding: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid #555;
+            color: white;
+            border-radius: 3px;
+        }
+        
+        .property-item button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        
+        .property-item button:hover {
+            background: #ff6666;
+        }
+        
+        #add-property-btn {
+            width: 100%;
+            padding: 8px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        
+        #add-property-btn:hover {
+            background: #66BB6A;
+        }
+        
+        #properties-panel h3 {
+            margin-top: 0;
+            border-bottom: 1px solid #555;
+            padding-bottom: 8px;
+        }
+        
+        #properties-list {
+            margin: 10px 0;
+        }
+        
+        .property-item {
+            display: flex;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        
+        .property-item input[type="text"] {
+            flex: 1;
+            margin: 0 5px;
+            padding: 5px;
+            background: #555;
+            border: 1px solid #777;
+            color: white;
+            border-radius: 3px;
+        }
+        
+        .property-item button {
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        
+        #add-property-btn {
+            width: 100%;
+            padding: 8px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-top: 5px;
+        }
+        
+        #add-property-btn:hover {
+            background: #45a049;
+        }
+        
         /* Style for transform controls */
         .transform-controls {
             position: absolute;
