@@ -12,48 +12,8 @@ class AssetLevelEditor {
         this.propertiesList = null; // Reference to the properties list element
         this.addPropertyBtn = null; // Reference to the add property button
         
-        console.log('Properties panel elements:', {
-            panel: this.propertiesPanel,
-            list: this.propertiesList,
-            button: this.addPropertyBtn
-        });
-        
-        // Set up properties panel event listeners
-        if (this.addPropertyBtn) {
-            // Store reference to this for use in the event listener
-            const self = this;
-            
-            // Use mousedown instead of click to prevent blur events from deselecting
-            this.addPropertyBtn.addEventListener('mousedown', function(event) {
-                // Prevent default to avoid any potential form submission
-                event.preventDefault();
-                
-                // Don't stop propagation here as we want the panel to stay focused
-                
-                // Only add property if we have a selected object
-                if (self.selectedObject) {
-                    // Use setTimeout to ensure this runs after any other click handlers
-                    setTimeout(() => {
-                        self.addProperty();
-                    }, 0);
-                }
-            });
-            
-            // Also prevent click events from propagating
-            this.addPropertyBtn.addEventListener('click', function(event) {
-                event.stopPropagation();
-                event.preventDefault();
-            });
-            
-            // Prevent focus from being removed from the panel
-            this.addPropertyBtn.addEventListener('focus', function(event) {
-                event.stopPropagation();
-            });
-            
-            console.log('Added event listeners to add property button');
-        } else {
-            console.error('Add property button not found!');
-        }
+        // Set up properties panel event listeners when DOM is ready
+        this.initializePropertiesPanel();
         
         // Store properties for each object
         this.objectProperties = new Map();
@@ -1544,100 +1504,158 @@ class AssetLevelEditor {
                 hud.innerHTML = `<div>Loading scene: ${file.name} (${isNewFormat ? sceneData.metadata?.objectCount || 0 : 'legacy'} objects)</div>`;
             }
             
-            // Load all objects from the scene data
+            // Load all objects from the scene data in parallel
             const objects = isNewFormat ? sceneData.objects : (sceneData.objects || []);
+            const loader = new THREE.GLTFLoader();
             
-            for (const objData of objects) {
-                try {
-                    const loader = new THREE.GLTFLoader();
+            // Configure the loader to handle KHR_texture_transform extension
+            loader.register(parser => ({
+                name: 'KHR_texture_transform',
+                async loadTexture(texIndex) {
+                    const json = parser.json;
+                    const textureDef = json.textures[texIndex];
+                    const texture = await parser.loadTexture(textureDef.source);
                     
-                    // Handle both new and old format
-                    const modelPath = isNewFormat ? objData.path : objData.file;
-                    if (!modelPath) continue;
-                    
-                    const gltf = await loader.loadAsync(modelPath);
-                    const model = gltf.scene;
-                    
-                    // Set position
-                    if (isNewFormat && objData.position) {
-                        model.position.set(
-                            objData.position.x || 0,
-                            objData.position.y || 0,
-                            objData.position.z || 0
-                        );
-                    } else if (Array.isArray(objData.position)) {
-                        model.position.fromArray(objData.position);
-                    }
-                    
-                    // Set rotation
-                    if (isNewFormat && objData.rotation) {
-                        model.rotation.set(
-                            objData.rotation.x || 0,
-                            objData.rotation.y || 0,
-                            objData.rotation.z || 0
-                        );
-                    } else if (Array.isArray(objData.rotation)) {
-                        model.rotation.fromArray(objData.rotation);
-                    }
-                    
-                    // Set scale
-                    if (objData.scale) {
-                        if (Array.isArray(objData.scale)) {
-                            model.scale.fromArray(objData.scale);
-                        } else if (typeof objData.scale === 'object') {
-                            model.scale.set(
-                                objData.scale.x || 1,
-                                objData.scale.y || 1,
-                                objData.scale.z || 1
-                            );
+                    // Get the texture transform extension
+                    const transform = textureDef.extensions && textureDef.extensions.KHR_texture_transform;
+                    if (transform) {
+                        // Apply basic transform properties if they exist
+                        if (transform.offset !== undefined) {
+                            texture.offset.fromArray(transform.offset);
                         }
-                    } else {
-                        model.scale.set(1, 1, 1);
-                    }
-                    
-                    // Initialize userData
-                    model.userData = model.userData || {};
-                    model.userData.isPlacedObject = true;
-                    model.userData.originalFile = modelPath;
-                    
-                    // Store the original ID and UUID if they exist
-                    if (isNewFormat) {
-                        if (objData.id) model.userData.originalId = objData.id;
-                        if (objData.uuid) model.userData.originalUuid = objData.uuid;
-                        if (objData.originalUuid) model.userData.originalUuid = objData.originalUuid;
-                        
-                        // Load properties if they exist in the object data
-                        if (objData.properties) {
-                            model.userData.properties = { ...objData.properties };
+                        if (transform.rotation !== undefined) {
+                            texture.rotation = transform.rotation;
+                        }
+                        if (transform.scale !== undefined) {
+                            texture.repeat.fromArray(transform.scale);
+                        }
+                        if (transform.texCoord !== undefined) {
+                            // Note: Custom UV sets are not supported, but we can at least handle the basic case
+                            texture.channel = transform.texCoord;
                         }
                     }
-                    
-                    // Set up shadows
-                    model.traverse(child => {
-                        if (child.isMesh) {
-                            child.castShadow = true;
-                            child.receiveShadow = true;
-                        }
-                    });
-                    
-                    this.scene.add(model);
-                } catch (error) {
-                    console.error(`Error loading model ${objData.path || objData.file}:`, error);
-                    
-                    // Create a placeholder cube if model fails to load
-                    const position = isNewFormat && objData.position ? 
-                        new THREE.Vector3(
-                            objData.position.x || 0,
-                            objData.position.y || 0,
-                            objData.position.z || 0
-                        ) : 
-                        (objData.position && Array.isArray(objData.position) ? 
-                            new THREE.Vector3().fromArray(objData.position) : 
-                            new THREE.Vector3());
-                    
-                    this.createDemoCubeAt(position);
+                    return texture;
                 }
-            }
+            }));
+            
+            // Suppress the specific warning
+            const originalWarn = console.warn;
+            console.warn = function(...args) {
+                if (args[0] && typeof args[0] === 'string' && 
+                    args[0].includes('KHR_texture_transform')) {
+                    // Suppress this specific warning
+                    return;
+                }
+                originalWarn.apply(console, args);
+            };
+            
+            // Create an array of promises for loading models
+            const loadPromises = objects.map(objData => {
+                return new Promise(async (resolve) => {
+                    try {
+                        // Handle both new and old format
+                        const modelPath = isNewFormat ? objData.path : objData.file;
+                        if (!modelPath) {
+                            resolve(null);
+                            return;
+                        }
+                        
+                        // Load the model
+                        const gltf = await loader.loadAsync(modelPath);
+                        const model = gltf.scene;
+                        
+                        // Set position
+                        if (isNewFormat && objData.position) {
+                            model.position.set(
+                                objData.position.x || 0,
+                                objData.position.y || 0,
+                                objData.position.z || 0
+                            );
+                        } else if (Array.isArray(objData.position)) {
+                            model.position.fromArray(objData.position);
+                        }
+                        
+                        // Set rotation
+                        if (isNewFormat && objData.rotation) {
+                            model.rotation.set(
+                                objData.rotation.x || 0,
+                                objData.rotation.y || 0,
+                                objData.rotation.z || 0
+                            );
+                        } else if (Array.isArray(objData.rotation)) {
+                            model.rotation.fromArray(objData.rotation);
+                        }
+                        
+                        // Set scale
+                        if (objData.scale) {
+                            if (Array.isArray(objData.scale)) {
+                                model.scale.fromArray(objData.scale);
+                            } else if (typeof objData.scale === 'object') {
+                                model.scale.set(
+                                    objData.scale.x || 1,
+                                    objData.scale.y || 1,
+                                    objData.scale.z || 1
+                                );
+                            }
+                        } else {
+                            model.scale.set(1, 1, 1);
+                        }
+                        
+                        // Initialize userData
+                        model.userData = model.userData || {};
+                        model.userData.isPlacedObject = true;
+                        model.userData.originalFile = modelPath;
+                        
+                        // Store the original ID and UUID if they exist
+                        if (isNewFormat) {
+                            if (objData.id) model.userData.originalId = objData.id;
+                            if (objData.uuid) model.userData.originalUuid = objData.uuid;
+                            if (objData.originalUuid) model.userData.originalUuid = objData.originalUuid;
+                            
+                            // Load properties if they exist in the object data
+                            if (objData.properties) {
+                                model.userData.properties = { ...objData.properties };
+                            }
+                        }
+                        
+                        // Set up shadows
+                        model.traverse(child => {
+                            if (child.isMesh) {
+                                child.castShadow = true;
+                                child.receiveShadow = true;
+                            }
+                        });
+                        
+                        resolve(model);
+                    } catch (error) {
+                        console.error(`Error loading model ${objData.path || objData.file}:`, error);
+                        
+                        // Create a placeholder cube if model fails to load
+                        const position = isNewFormat && objData.position ? 
+                            new THREE.Vector3(
+                                objData.position.x || 0,
+                                objData.position.y || 0,
+                                objData.position.z || 0
+                            ) : 
+                            (objData.position && Array.isArray(objData.position) ? 
+                                new THREE.Vector3().fromArray(objData.position) : 
+                                new THREE.Vector3());
+                        
+                        const cube = this.createDemoCubeAt(position, false);
+                        resolve(cube);
+                    }
+                });
+            });
+            
+            // Wait for all models to load and add them to the scene
+            const loadedModels = await Promise.all(loadPromises);
+            loadedModels.forEach(model => {
+                if (model) {
+                    this.scene.add(model);
+                }
+            });
+            
+            console.log(`Loaded ${loadedModels.filter(m => m !== null).length} objects in parallel`);
             
             // Reset file input
             event.target.value = '';
@@ -1648,14 +1666,13 @@ class AssetLevelEditor {
                     hud.innerHTML = originalHUD;
                 }, 2000);
             }
-            
             console.log(`Scene loaded: ${objects.length} objects`);
             
         } catch (error) {
             console.error('Error loading scene:', error);
-            alert(`Error loading scene file: ${error.message || 'Unknown error'}`);
-            
-            // Restore HUD in case of error
+            alert('Error loading scene. See console for details.');
+        } finally {
+            // Restore HUD
             if (hud) {
                 hud.innerHTML = originalHUD;
             }
@@ -1672,8 +1689,57 @@ class AssetLevelEditor {
     animate() {
         requestAnimationFrame(() => this.animate());
         this.controls.update();
-        this.update();
-        this.renderer.render(this.scene, this.camera);
+    }
+    
+    // Method to initialize the properties panel and its event listeners
+    initializePropertiesPanel() {
+        // Get references to the properties panel elements
+        this.propertiesPanel = document.getElementById('properties-panel');
+        this.propertiesList = document.getElementById('properties-list');
+        this.addPropertyBtn = document.getElementById('add-property-btn');
+        
+        console.log('Properties panel elements:', {
+            panel: this.propertiesPanel,
+            list: this.propertiesList,
+            button: this.addPropertyBtn
+        });
+        
+        // Set up properties panel event listeners
+        if (this.addPropertyBtn) {
+            // Store reference to this for use in the event listener
+            const self = this;
+            
+            // Use mousedown instead of click to prevent blur events from deselecting
+            this.addPropertyBtn.addEventListener('mousedown', function(event) {
+                // Prevent default to avoid any potential form submission
+                event.preventDefault();
+                
+                // Don't stop propagation here as we want the panel to stay focused
+                
+                // Only add property if we have a selected object
+                if (self.selectedObject) {
+                    // Use setTimeout to ensure this runs after any other click handlers
+                    setTimeout(() => {
+                        self.addProperty();
+                    }, 0);
+                }
+            });
+            
+            // Also prevent click events from propagating
+            this.addPropertyBtn.addEventListener('click', function(event) {
+                event.stopPropagation();
+                event.preventDefault();
+            });
+            
+            // Prevent focus from being removed from the panel
+            this.addPropertyBtn.addEventListener('focus', function(event) {
+                event.stopPropagation();
+            });
+            
+            console.log('Added event listeners to add property button');
+        } else {
+            console.warn('Add property button not found. The properties panel may not function correctly.');
+        }
     }
 }
 
@@ -1683,4 +1749,13 @@ window.addEventListener('DOMContentLoaded', () => {
     
     // Make app globally available for debugging
     window.app = app;
+    
+    // Start the animation loop
+    function animate() {
+        requestAnimationFrame(animate);
+        app.renderer.render(app.scene, app.camera);
+        app.controls.update();
+        app.update();
+    }
+    animate();
 });
