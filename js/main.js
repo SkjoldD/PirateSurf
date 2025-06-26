@@ -45,10 +45,38 @@ class AssetLevelEditor {
         this.transformControls.addEventListener('dragging-changed', (event) => {
             this.controls.enabled = !event.value;
             
-            // Snap to grid when dragging ends
+            // When dragging ends
             if (!event.value && this.selectedObject) {
+                // Snap position to grid
                 const snappedPosition = this.snapToGrid(this.selectedObject.position);
                 this.selectedObject.position.copy(snappedPosition);
+                
+                // Snap rotation to 45-degree increments if in rotate mode
+                if (this.transformControls.getMode() === 'rotate') {
+                    const euler = new THREE.Euler();
+                    euler.setFromQuaternion(this.selectedObject.quaternion);
+                    
+                    // Convert to degrees
+                    const degrees = {
+                        x: THREE.MathUtils.radToDeg(euler.x),
+                        y: THREE.MathUtils.radToDeg(euler.y),
+                        z: THREE.MathUtils.radToDeg(euler.z)
+                    };
+                    
+                    // Snap each axis to nearest 45 degrees
+                    const snappedDegrees = {
+                        x: Math.round(degrees.x / 45) * 45,
+                        y: Math.round(degrees.y / 45) * 45,
+                        z: Math.round(degrees.z / 45) * 45
+                    };
+                    
+                    // Convert back to radians and apply
+                    euler.x = THREE.MathUtils.degToRad(snappedDegrees.x);
+                    euler.y = THREE.MathUtils.degToRad(snappedDegrees.y);
+                    euler.z = THREE.MathUtils.degToRad(snappedDegrees.z);
+                    
+                    this.selectedObject.quaternion.setFromEuler(euler);
+                }
             }
         });
         
